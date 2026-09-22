@@ -232,3 +232,53 @@ def test_default_branch_when_main(repo_path):
     init_repository(repo_path, initial_head="master")
     repo = GitRepository(path=repo_path)
     assert repo.default_branch == "master"
+
+
+def test_default_branch_where_path_is_inside_another_repository_expect_none(repo_path):
+    """A path that is not yet a repository must not answer from its parent.
+
+    Git resolves `symbolic-ref` for such a path by walking up until it finds a
+    repository, so an enclosing checkout answers for it. Creating repositories
+    beneath an existing one is ordinary -- test fixtures and archives both do
+    it -- and the enclosing branch is never the right answer.
+    """
+    init_repository(repo_path, initial_head="master")
+    nested = repo_path / "nested"
+    nested.mkdir()
+
+    repo = GitRepository(path=nested)
+
+    assert repo.default_branch is None
+
+
+def test_default_branch_where_repository_created_after_construction_expect_own_branch(
+    repo_path,
+):
+    """The branch comes from the repository, not from a value cached before it existed."""
+    init_repository(repo_path, initial_head="master")
+    nested = repo_path / "nested"
+    nested.mkdir()
+    GitRepository(path=nested)  # resolves once, while nested is a plain directory
+
+    init_repository(nested, initial_head="main")
+
+    assert GitRepository(path=nested).default_branch == "main"
+
+
+def test_init_repo_where_constructed_before_the_repository_existed_expect_branch_read(
+    repo_path,
+):
+    """`init_repo` reads the branch the repository was created on.
+
+    Building the object first and creating the repository through it is the
+    usual order, and there is no branch to read at construction. `clone` and
+    `clone_from_disk` already resolve once the repository exists; so does this.
+    """
+    nested = repo_path / "nested"
+    nested.mkdir(parents=True)
+    repo = GitRepository(path=nested)
+    assert repo.default_branch is None
+
+    repo.init_repo()
+
+    assert repo.default_branch == repo._git("symbolic-ref HEAD --short")

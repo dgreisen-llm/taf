@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning][semver].
 
 ### Fixed
 
+- Determine the default branch from the repository itself, instead of from an enclosing repository when the path is not yet a repository ([795])
+- Read the default branch once `init_repo` has created the repository, as `clone` and `clone_from_disk` already do ([795])
 - `is_git_repository_root` no longer settles on the answer from before the path became a repository, and recognizes a linked worktree or a submodule as a root ([797])
 - `init_repo`, `clone`, `clone_from_disk` and `clone_bare_from_local` discard the pygit2 repository, bare flag and remotes read from an enclosing repository ([797])
 - Determine the default branch from a local (`--from-fs`) path containing a space, instead of failing ([780])
@@ -36,6 +38,7 @@ and this project adheres to [Semantic Versioning][semver].
 
 
 [797]: https://github.com/openlawlibrary/taf/pull/797
+[795]: https://github.com/openlawlibrary/taf/pull/795
 [780]: https://github.com/openlawlibrary/taf/pull/780
 [775]: https://github.com/openlawlibrary/taf/pull/775
 [774]: https://github.com/openlawlibrary/taf/pull/774
