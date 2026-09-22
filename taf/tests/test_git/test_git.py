@@ -167,6 +167,100 @@ def test_is_git_repository_root_non_bare(repository: GitRepository):
     assert repository.is_git_repository_root
 
 
+def test_is_git_repository_root_linked_worktree(repository: GitRepository, tmp_path):
+    """A linked worktree is a repository root, though its git directory lives
+    under the repository it belongs to."""
+    worktree_path = Path(tmp_path) / "worktree"
+    repository._git("worktree add {} -b wtbranch", str(worktree_path))
+
+    worktree = GitRepository(path=worktree_path)
+
+    assert worktree.is_git_repository_root
+    assert worktree.default_branch == "wtbranch"
+
+
+def test_is_git_repository_root_submodule(repository: GitRepository, tmp_path):
+    """A submodule is a repository root, though its git directory lives under
+    the superproject."""
+    submodule_source = Path(tmp_path) / "submodule_source"
+    submodule_source.mkdir()
+    source = GitRepository(path=submodule_source)
+    source.init_repo()
+    (submodule_source / "sub.txt").write_text("Some example text")
+    source.commit(message="Add sub.txt")
+    source._git("branch -m subbranch")
+    repository._git(
+        "-c protocol.file.allow=always submodule add {} sub", str(submodule_source)
+    )
+
+    submodule = GitRepository(path=repository.path / "sub")
+
+    assert submodule.is_git_repository_root
+    assert submodule.default_branch == "subbranch"
+    assert repository.default_branch != "subbranch"
+
+
+def test_is_git_repository_root_git_directory(repository: GitRepository):
+    """The git directory is not the root; the work tree is."""
+    assert not GitRepository(path=repository.path / ".git").is_git_repository_root
+
+
+def test_is_git_repository_root_not_cached_negative(repository: GitRepository):
+    """is_git_repository_root must not settle on a negative answer: a path
+    inside a repository that later becomes a repository itself has to report
+    True, rather than the answer from before it existed."""
+    nested_path = repository.path / "nested"
+    nested_path.mkdir()
+    nested = GitRepository(path=nested_path)
+    assert nested.is_git_repository_root is False
+
+    GitRepository(path=nested_path).init_repo()
+
+    assert nested.is_git_repository_root is True
+
+
+def test_init_repo_clears_state_read_from_the_enclosing_repository(
+    repository: GitRepository,
+):
+    """Reading through pygit2 before the repository exists resolves to the
+    enclosing one; init_repo must not leave that behind."""
+    nested_path = repository.path / "nested"
+    nested_path.mkdir()
+    nested = GitRepository(path=nested_path)
+    assert nested.head_commit() == repository.head_commit()
+
+    nested.init_repo()
+
+    assert nested.head_commit() is None
+
+
+def test_clone_from_disk_clears_state_read_from_the_enclosing_repository(
+    repository: GitRepository, clone_repository: GitRepository
+):
+    """The fixture path sits inside this checkout, so reading through pygit2
+    before the clone resolves to it."""
+    assert clone_repository.head_commit() != repository.head_commit()
+
+    clone_repository.clone_from_disk(repository.path, keep_remote=False)
+
+    assert clone_repository.head_commit() == repository.head_commit()
+
+
+def test_init_repo_clears_remotes_read_from_the_enclosing_repository(
+    repository: GitRepository, tmp_path
+):
+    """`remotes` is read through pygit2 and cached, so it needs clearing too."""
+    repository._git("remote add origin {}", str(tmp_path))
+    nested_path = repository.path / "nested"
+    nested_path.mkdir()
+    nested = GitRepository(path=nested_path)
+    assert nested.remotes == ["origin"]
+
+    nested.init_repo()
+
+    assert nested.remotes == []
+
+
 def test_is_git_repository_not_cached_negative(tmp_path):
     """is_git_repository must not permanently cache a negative result: an
     instance created for a path before the repository exists (e.g. before the

@@ -234,19 +234,21 @@ class GitRepository:
 
     @property
     def is_git_repository_root(self) -> bool:
+        """Check if the given path is the root of a Git repository -- its work
+        tree, or the repository itself when bare -- rather than merely inside one.
+
+        A linked worktree and a submodule are both roots, though their git
+        directories live under the repository they belong to.
+        """
         try:
-            repo = self.pygit_repo
-            if repo is None:
+            discovered = pygit2.discover_repository(str(self.path))
+            if not discovered:
                 return False
-            if self.is_bare_repository:
-                return repo.is_bare and Path(repo.path).resolve() == self.path.resolve()
-            else:
-                git_path = self.path / ".git"
-                return Path(repo.path).resolve() == git_path.resolve() and (
-                    git_path.is_dir() or git_path.is_file()
-                )
-        except (PygitError, GitError):
+            found = pygit2.Repository(discovered)
+            root = found.workdir or found.path
+        except (PygitError, ValueError, KeyError, OSError):
             return False
+        return Path(root).resolve() == self.path.resolve()
 
     @property
     def initial_commit(self) -> Commitish:
@@ -868,6 +870,9 @@ class GitRepository:
         # the path is now a repository; drop any cached negative result from
         # before the clone
         self._is_git_repository = None
+        self._pygit = None
+        self._is_bare_repo = None
+        self._remotes = None
 
         if self.default_branch is None:
             self.default_branch = self._determine_default_branch()
@@ -908,6 +913,9 @@ class GitRepository:
         # the path is now a repository; drop any cached negative result from
         # before the clone
         self._is_git_repository = None
+        self._pygit = None
+        self._is_bare_repo = None
+        self._remotes = None
         if not self.is_git_repository:
             raise GitError(
                 self, message=f"Could not clone repository from local path {local_path}"
@@ -1590,6 +1598,9 @@ class GitRepository:
         flag = "--bare" if bare else ""
         self._git(f"init {flag}", error_if_not_exists=False)
         self._is_git_repository = None
+        self._pygit = None
+        self._is_bare_repo = None
+        self._remotes = None
         if self.urls is not None and len(self.urls):
             self._git("remote add origin {}", self.urls[0])
 
@@ -2140,6 +2151,9 @@ class GitRepository:
             reraise_error=True,
         )
         self._is_git_repository = None
+        self._pygit = None
+        self._is_bare_repo = None
+        self._remotes = None
         # `git clone --bare` creates no origin remote (pygit2 did); add it for
         # parity so the caller's `remote set-url origin` succeeds
         self.add_remote("origin", str(local_path))
